@@ -1,9 +1,3 @@
-import code
-from codeop import CommandCompiler
-from distutils.util import change_root
-from email import message
-from operator import imod
-from turtle import title
 import discord
 from discord.ext import commands
 from discord.ext.commands import NotOwner
@@ -12,26 +6,29 @@ import random
 import datetime
 import time
 import asyncio
+import mariadb as mdb
+import sys
 
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 intents.members = True
 
-bot = commands.Bot(intents=intents, command_prefix='$')
+bot = commands.Bot(command_prefix='$', intents=intents)
 
 pairNum = []
 
-send_time = "16:20"
-
-############################################
-async def schedule_message():
-    now = datetime.datetime.now()
-    then = now+datetime.timedelta(days=1)
-    then = now.replace(hour=16, minute=20)
-    wait_time = (then-now).total_seconds()
-    await asyncio.sleep(wait_time)
-
-    channel = bot.get_channel(978804525513191427)
-    await channel.send("420 blaze it!!")
+try:
+    con = mdb.connect(
+        host = "IP",
+        port = 3306,
+        user = "root",
+        password = "data",
+        database="monstersdb"
+    )
+    cur = con.cursor()
+    print("Connected!")
+except mdb.Error as e:
+    print(e)
+    sys.exit(1)
 ############################################
 
 ############################################
@@ -39,9 +36,44 @@ async def schedule_message():
 async def on_ready():
     print('We have logged in as {0.user}'.format(bot))
     
-    #await bot.change_presence(status=discord.Status.invisible)
-    #await schedule_message()
 ############################################
+
+############################################
+@bot.command(name="monsterinfo")
+async def say(ctx, arg1, arg2):
+    #
+    if arg2 == '-s':
+        cur.execute("SELECT * FROM Monsterview WHERE monster LIKE \"%" + arg1 + "%\"")
+    elif arg2 == '-e':
+        cur.execute("SELECT * FROM Monsterview WHERE monster = \"" + arg1 + "\";")
+    else:
+        await ctx.send("Query mode invalid. Should be either -s(to search) or -e(to get exact monster)")
+    tavnit = '|'
+    separator = '+'
+    widths = []
+    columns = []
+    output = ""
+    results = cur.fetchall()
+
+    for cd in cur.description:
+        widths.append(max(cd[2], len(cd[0])))
+        columns.append(cd[0])
+    for w in widths:
+        tavnit += " %-"+"%ss |" % (w,)
+        separator += "-"*w + '--+'
+
+    output += "```"+separator+"\n"
+    output += tavnit % tuple(columns) + "\n"
+    output += separator+"\n"
+    for row in results:
+        output += tavnit % row+"\n"
+    output += separator+"```\n"
+    
+    await ctx.send(output)
+
+
+############################################
+
 
 ############################################
 @bot.command(name="say")
@@ -72,17 +104,6 @@ async def erase_error(ctx, error):
 ############################################
 
 ############################################
-@bot.event
-async def on_message_edit(old, nm):
-    oldmessage = old.content
-    newmessage = nm.content
-    author = old.author.name
-    channel = bot.get_channel(978864966738272276)
-    message = "Author: " + author + "\n" +"Old: " + oldmessage + " Time: " + old.created_at.strftime("%d, %b %Y %I:%M:%S%p %Z") + "\nNew: " + newmessage + " Time: " + nm.edited_at.strftime("%d, %b %Y %I:%M:%S%p %Z")
-    await channel.send(message)
-############################################
-
-############################################
 #dad bot joke
 @bot.event
 async def on_message(message):
@@ -92,13 +113,6 @@ async def on_message(message):
     if ("I'm " in message.content) or ("I am " in message.content):
         word = message.content.split()
         await message.channel.send(" Hi {}, I am RAMbot".format(word[-1]))
-
-    #new message gain exp
-    #if exp is greater than threshold level up and reset exp to 0
-    #update level
-
-
-    #with open(message.author.name + ".txt", 'w') as f:
 
     await bot.process_commands(message)
 ############################################
@@ -126,16 +140,6 @@ async def hello(ctx):
     if ctx.channel.name != "bottesting":
         return
     await ctx.send("Hello")
-############################################
-
-############################################
-#displays members from server kinda useless tbh
-@bot.command(name="members")
-async def members(ctx):
-    if ctx.channel.name != "bottesting":
-        return
-    for member in ctx.channel.guild.members:
-        await ctx.channel.send(member)
 ############################################
 
 ############################################
@@ -173,7 +177,6 @@ async def removeRole(ctx, member: discord.Member, role: discord.Role):
         await ctx.send(f"{member.mention} does not have the role {role}")
 ############################################
 
-
 ############################################
 @bot.command(name="getnames")
 async def getnames(ctx):
@@ -201,14 +204,23 @@ async def storenames(ctx):
 
 
 ############################################
+# for secrect santa among friends
 @bot.command(name= "santa")
 async def santa(ctx):
     if ctx.channel.name != "bottesting":
         return
-
-    possible = names
+    names=[]
     count = 0
     recipient = []
+    
+    for guild in bot.guilds:
+        for member in guild.members:
+            #members not participating in secret santa and bots
+            if member.name == "mem1" or member.name == "mem2" or member.name == "bot1" :
+                continue    
+            names.append(member)
+
+    possible = names
 
     while(count == 0):
         redo = False
@@ -233,10 +245,10 @@ async def santa(ctx):
             else:
                 count = 0
     i = 0
-    for name in names:
-        #dm name with recipient added later
-        await ctx.send("Giver: " + name + " Recipient: " + recipient[i])
+    for n in names:
+        await n.send(" You get " + recipient[i].name)
         i += 1
+    await ctx.send("Done!!")    
 ############################################
 
 ############################################
@@ -254,6 +266,7 @@ async def info(ctx):
     embed.add_field(name="$addRole <user> rolename", value="Adds role to user if not already assigned", inline=False)
     embed.add_field(name="$removeRole <user> rolename", value="Removes role from user if it has that role assigned", inline=False)
     embed.add_field(name="$info", value="displays list of commands (this whole message)", inline=False)
+    embed.add_field(name="$monsterinfo", value="Searches monster info from a database :O", inline=False)
 
     await ctx.message.channel.send(embed=embed)
 ############################################
@@ -280,13 +293,13 @@ async def monster(ctx):
 async def leave(ctx):
     if ctx.channel.name != "bottesting":
         return
-    await ctx.send("Bye bye!")
     await bot.logout()
     await bot.close()
+    exit(0)
 @leave.error #error message
 async def leave_error(ctx, error):
     if isinstance(error, NotOwner):
         await ctx.reply("You don't have permission to use this command!")
 ############################################
 
-bot.run()
+bot.run("Bot_token")
